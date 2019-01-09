@@ -1,0 +1,255 @@
+---
+title: "Generalized Linear Models"
+author: "Flint"
+date: 
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+----------------------------------------------------------------------------------------------
+Abstract
+
+
+Key Words: Treatment, Onychomycosis, terbinafine, itraconazole, Logistic regression
+_________________________________________________________________________________________________
+
+
+
+Group leader: Flint Chenjera
+----------------------------------------------------------------------------------------------
+
+Dependent variable: 
+
+Independent variables: 
+
+
+----------------------------------------------------------------------------------------------
+
+House keeping
+```{r warning=FALSE}
+comment=NA # to remove all hashes
+rm(list=ls())
+chooseCRANmirror(graphics=FALSE, ind=1)
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(comment = NA)
+library(nlme)
+library(MASS)
+library(tidyverse)
+library(ggplot2)
+library(nlme)
+library(knitr)
+library(kableExtra)
+library(expss)
+library(pander)
+library(stargazer)
+library(dplyr)
+library(gmodels)
+library(xtable)
+library(survMisc)
+library(TraMineR)
+library(stargazer)
+library(grid)
+library(vcd)
+library(epiDisplay)
+opts_knit$set(root.dir = "C:/Users/user/Desktop/flint/MSc Statistics/GLM 503/Project")
+```
+
+
+
+#Load the data
+```{r}
+thedat <- read.table("toenail.dat",row.names=NULL)
+ 
+dim(thedat)
+#The original study consisted of 1200 observations and 6 variables
+head(thedat)
+#The original variables are not properly named and the values for categorical variables are not labeled
+summary(thedat)
+#from the looks of things, V2, V3 and V6 are binary variables.
+```
+
+#Data manupulation 
+```{r}
+#renaming variables
+colnames(thedat) <- c("ID","healthclub","gender","month","length","trt")
+head(thedat)
+length(unique(thedat$id))
+
+unique(thedat$healthclub) # 0 1
+unique(thedat$gender)     # 1 0
+unique(thedat$month)      # 0 1 2 3 6 12
+unique(thedat$trt)        # 1 2   
+
+#adding value labels 
+thedat<-thedat %>%
+  mutate(Treatment=ifelse(trt==1,"terbinane","itraconazole")) %>%
+  mutate(Health_club=ifelse(healthclub==1,"more than once a week","once a week or less")) %>%
+  mutate(Gender=ifelse(gender==1,"Male","Female")) %>%
+  mutate(Month=ifelse(month==0, "Base month", 
+                      ifelse(month==1,"1st month",
+                             ifelse(month==2,"2nd month", 
+                                    ifelse(month==3,"3rd month",
+                                           ifelse(month==6,"6th month", "12th month"))))))
+
+dat1<-                       
+  filter(thedat, Month=="Base month"| Month=="12th month")
+unique(dat1$Month)
+
+boxpt<-boxplot(length ~ Treatment*month, data = thedat, ylab="length" , xlab="Treatment + month", col=c("gold","darkgreen"), names = c("it0","te0","it1","te1","it2","te2","it3","te3","it6","te6","it12","te12"))
+
+data_wide <- reshape(dat1, idvar = "ID", timevar = "Month", direction = "wide")
+summary(data_wide)
+
+data_wide<-data_wide %>%
+  mutate(differance=`length.12th month`- `length.Base month`) %>%
+  mutate(success=ifelse(differance>=5,"Success","Failure"))
+
+count1<-data_wide %>%
+  count(success) %>%
+mutate("%" = n / sum(n)*100)
+
+count1  %>%   
+  kable("html" , caption = 'Outcome Descriptives') %>%   
+  kable_styling()
+#kable(head(thedat), format = "markdown")
+```
+
+
+
+Is there evidence to suggest that these two oral medications differ in
+their effects on toenail dermatophyte onychomycosis, as reflected by
+the proportions of successfully treated patients at 12 months?
+```{r}
+#Graphical visualization
+p<-ggplot(data=thedat, aes(x=month,y=length,group=ID ),alpha=0.90)+
+geom_point(size=2,shape=18,color='navy blue') +
+geom_line(size=1,color='navy blue') +
+theme(strip.text.x = element_text(size =15, colour = "navy blue")) +
+scale_x_continuous("Time (Month)",limits=c(0,12),breaks=thedat$month) +
+scale_y_continuous("Length (mm)",limits=c(0,20))
+  
+p1<-p+ facet_wrap(~Treatment , nrow=1)
+p2<-p+ facet_wrap(~Treatment+Gender , nrow=1)
+
+#Analytical 
+#table7<- data_wide %>%  table(`Treatment.12th month`, success) 
+
+table1<- 
+ table(data_wide$`Treatment.12th month`, data_wide$success) 
+
+a1<-CrossTable(data_wide$`Treatment.12th month`, data_wide$success)
+CrossTable(data_wide$`Treatment.12th month`, data_wide$`Gender.12th month`)
+CrossTable(data_wide$`Treatment.12th month`, data_wide$`Health_club.12th month`)
+```
+
+
+##Regrssion models
+```{r}
+mod1=glm(factor(success)~1,family = binomial(link=logit),data=data_wide) 
+#summary(mod1)
+logistic.display(mod1)
+
+mod2=glm(factor(success)~factor(`Treatment.12th month`),family = binomial(link=logit),data=data_wide)
+#summary(mod2)
+logistic.display(mod2)
+
+#anova(mod1,mod2,test="LRT")
+
+mod3=glm(factor(success)~factor(`Treatment.12th month`)+ `length.Base month`
+        ,family = binomial(link=logit),data=data_wide)
+#summary(mod3)
+logistic.display(mod3)
+
+
+
+#anova(mod2,mod3,test="LRT") 
+
+mod4=glm(factor(success)~factor(`Treatment.12th month`)+ `length.Base month`+
+           factor(`Health_club.12th month`) ,family = binomial(link=logit),data=data_wide)
+#summary(mod4)
+logistic.display(mod4)
+
+#anova(mod3,mod4,test="LRT") ##---Likelihood ratio test between models
+
+mod5=glm(factor(success)~factor(`Treatment.12th month`)+
+      `length.Base month`+ factor(`Health_club.12th month`) + factor(`Gender.12th month`)   ,family = binomial(link=logit),data=data_wide)
+#summary(mod5)
+logistic.display(mod5) 
+
+#anova(mod4,mod5,test="LRT") ##---Likelihood ratio test between models
+
+#including an interaction term
+
+#data_wide<-data_wide %>%
+  #mutate(inter1= interaction(Treatment, Healthclub))
+
+#mod4.1=glm(factor(success)~factor(`Treatment.12th month`)+ `length.Base month`+
+#           factor(`Health_club.12th month`+ inter1) ,family = binomial(link=logit),data=data_wide)
+#summary(mod4.1)
+
+
+Treatment=ifelse(data_wide$`Treatment.12th month`=="terbinane",1,0)
+Length=data_wide$`length.Base month`
+Healthclub=ifelse(data_wide$`Health_club.12th month`=="once a week or less",1,0)
+Gender=ifelse(data_wide$`Gender.Base month`=="Male",1,0)
+
+coef4<-coef(mod4) ###--- Model parameter estimates
+
+prm=coef(mod4)
+
+predit.Func=function(prm,x1,x2,x3)
+{
+  pred1=exp(prm[1]+prm[2]*x1+prm[3]*x2+prm[4]*x3)/(1+exp(prm[1]+prm[2]*x1+prm[3]*x2+prm[4]*x3))
+  pred1
+}
+pred1=predit.Func(prm=coef4,x1=Treatment, x2=Length, x3=Healthclub)
+
+##three identical variable from model 4
+
+data_wide<-data_wide %>%
+  mutate(Indicator=ifelse(`Health_club.Base month`=="more than once a week" & `Treatment.Base month`=="terbinane", "Health Club:> 1 week & Treatment: terbinane", ifelse(`Health_club.Base month`=="more than once a week" & `Treatment.Base month`=="itraconazole", "Health Club:> 1 week & Treatment: itraconazole", ifelse(`Health_club.Base month`=="once a week or less" & `Treatment.Base month`=="itraconazole", "Health Club:<=1 week & Treatment: itraconazole", "Health Club:<=1 week & Treatment: terbinane")))) %>%
+  mutate(pred1=pred1)
+
+#Plot of predicted probabilities against different class of subjects
+
+g1<-ggplot(data = data_wide, aes(x=`length.Base month`, y=pred1, group = Indicator, colour = Indicator, fill=NULL)) +
+    geom_line(size = 1)+ 
+  geom_point(size = 1.6) +
+  scale_x_continuous("Lenght at Base month",limits=c(0, 10)) +
+scale_y_continuous("Predicted Probability of success of a treatment",limits=c(0,1))
+g1
+
+##Combining the fine models produced above
+stargazer(mod1, mod2, mod3, mod4, mod5 ,type="text", summary= TRUE, column.labels = c("Model", "Model", "Model", "Model", "Model"), covariate.labels = c("Treatment: terbinane", "Length at Base month", "Health club: once a week or less","Gender: Male", "Intercept"), style = "default",dep.var.labels.include=FALSE,dep.var.caption="Dependent variable: Treatment success")
+
+####OR OR OR OR OR OR OR OR OR
+```
+
+
+## checking for change in health club visitations
+```{r}
+data_wide1 <- reshape(thedat, idvar = "ID", timevar = "Month", direction = "wide")
+total1<-data_wide1
+total1<-select(total1, healthclub0=`Health_club.Base month`, healthclub1=`Health_club.1st month`, healthclub2=`Health_club.2nd month`, healthclub3=`Health_club.3rd month`, healthclub6=`Health_club.6th month`, healthclub12=`Health_club.12th month`)
+
+
+labels.total <- c("more than once a week", "more than once a week")
+total1$"Wave 0" <- total1$healthclub0
+total1$"Wave 1" <- total1$healthclub1
+total1$"Wave 2" <- total1$healthclub2
+total1$"Wave 3" <- total1$healthclub3
+total1$"Wave 6" <- total1$healthclub6
+total1$"Wave 12" <- total1$healthclub12
+
+
+healthclub.seq <- seqdef(total1, c("Wave 0", "Wave 1","Wave 2","Wave 3","Wave 6", "Wave 12"), xtstep = 1, labels = labels.total)
+
+
+fam.trate <- seqtrate(healthclub.seq)
+round(fam.trate, 2)
+
+```
+
+
+
